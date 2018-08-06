@@ -144,7 +144,6 @@ class App extends Component {
     this.handleChangeUser = this.handleChangeUser.bind(this);
     this.handleChangeSession = this.handleChangeSession.bind(this);
     this.reloadPage = this.reloadPage.bind(this);
-    this.forAllSession = this.forAllSession.bind(this);
   }
 
   /**
@@ -427,40 +426,6 @@ class App extends Component {
 
     console.log("Selected sessions: " + values.map(a => a.label).join(", "));
   }
-  
-  forAllSession() {
-    var url = "https://rpaowv6m75.execute-api.us-east-2.amazonaws.com/beta/getanalysis/";
-    url += this.state.SELECT.users_selected.value;
-    
-    this.disableGenerateButton();
-    this.loadingAnimation();
-      fetch(url).then(response => response.json()).then(data => {
-        this.setState({
-          username: data["username"],
-          start_time: data["startTime"],
-          end_time: data["endTime"],
-          loaded: true,
-          analysis_JSON: [JSON.stringify(data)],
-          analysis_general: [
-            data["blocksTraveled"]/10,
-            data["blocksPlaced"],
-            data["blocksBroken"],
-            data["chatMessages"],
-            data["commands"]
-          ],
-          analysis_STEM_keys: Object.keys(data["stemAreas"]),
-          analysis_STEM_values: Object.values(data["stemAreas"]),
-          analysis_STEM_times: data["areaTimes"],
-          analysis_biome_keys: Object.keys(data["biomeTimes"]),
-          analysis_biome_values: Object.values(data["biomeTimes"]),
-        });
-      }
-    ).then(() => {
-      this.hideOptionsMenu();
-      this.normalAnimation();
-      this.showAnalysis();
-    });
-  }
 
   /**
    * Retrieves analysis as a JSON file and displays it
@@ -639,11 +604,8 @@ class App extends Component {
 
           {/* Button to generate analysis */}
           <div>
-            <button id="generate_button_all_session" onClick={this.forAllSession} className="myButton">
-              Generate Analysis for Selected Sessions
-            </button>
             <button id="generate_button" onClick={this.generateButtonClick} className="myButton">
-              Generate Analysis for Selected Sessions
+              Generate Analysis
             </button>
           </div>
         </div>
