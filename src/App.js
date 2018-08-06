@@ -596,8 +596,11 @@ class App extends Component {
 
           {/* Button to generate analysis */}
           <div>
+            <button id="generate_button_all_session" onClick={this.forAllSession} className="myButton">
+              Generate Analysis for Selected Sessions
+            </button>
             <button id="generate_button" onClick={this.generateButtonClick} className="myButton">
-              Generate Analysis
+              Generate Analysis for Selected Sessions
             </button>
           </div>
         </div>
