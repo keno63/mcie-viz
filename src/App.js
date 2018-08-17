@@ -81,10 +81,14 @@ class App extends Component {
         sessions_disabled: true,
         sessions_data: [],
         sessions_selected: [],
+
+        recentSessions_loading: true,
+        recentSessions_disabled: true,
+        recentSessions_data: [],
+        recentSessions_selected: '',
       },
       // Whether or not the options part is disabled
       options_state: false,
-
 
       // Username of user being analyzed
       username: "",
@@ -94,16 +98,18 @@ class App extends Component {
       end_time: -1,
       // Whether or not the analysis has loaded
       loaded: false,
-      // JSON returned from analysis
-      analysis_JSON: [],
       // 0: Blocks traveled (/10) | 1: Blocks placed | 2: Blocks broken | 3: Chat messages sent | 4: Commands sent
       analysis_general: [],
       // Keys for STEM areas
       analysis_STEM_keys: [],
       // Values for STEM areas
       analysis_STEM_values: [],
-      // Whole "areaTimes" part of JSON file
+      // Whole "sessionStemAreaTimes" part of JSON file
       analysis_STEM_times: {},
+      // Section of "sessionStemAreaTimes" that is currently selected
+      analysis_STEM_selected_session: {},
+      // Info about the selected session
+      analysis_STEM_selected_info: {},
       // Keys for biomes
       analysis_biome_keys: [],
       // Values for biomes
@@ -127,15 +133,6 @@ class App extends Component {
           'donut_select': true,
           'line_select': true,
         },
-
-        // 'general_select': false,
-        // 'biome_select': true,
-        // 'field_select': true,
-        
-        // 'bar_select': false,
-        // 'pie_select': true,
-        // 'donut_select': true,
-        // 'line_select': true,
       },
     };
 
@@ -143,6 +140,9 @@ class App extends Component {
     this.generateButtonClick = this.generateButtonClick.bind(this);
     this.handleChangeUser = this.handleChangeUser.bind(this);
     this.handleChangeSession = this.handleChangeSession.bind(this);
+    this.handleChangeRecentSession = this.handleChangeRecentSession.bind(this);
+
+    this.handleSelectTimedSession = this.handleSelectTimedSession.bind(this);
     this.reloadPage = this.reloadPage.bind(this);
   }
 
@@ -151,6 +151,7 @@ class App extends Component {
    */
   componentDidMount() {
     this.generateUserList();
+    this.generateRecentSessions();
     this.hideAnalysis();
   }
 
@@ -222,22 +223,22 @@ class App extends Component {
     this.toggleButtonState(buttonID, isAnalysisButton);
 
     // Handle the lines separating the different analyses
-    var line1 = document.getElementById("line1");
-    var line2 = document.getElementById("line2");
+    // var line1 = document.getElementById("line1");
+    // var line2 = document.getElementById("line2");
 
-    var generalOn = !this.state.buttonStates.analysis_type[generalSelect];
-    var biomeOn = !this.state.buttonStates.analysis_type[biomeSelect];
-    var fieldOn = !this.state.buttonStates.analysis_type[fieldSelect];
+    // var generalOn = !this.state.buttonStates.analysis_type[generalSelect];
+    // var biomeOn = !this.state.buttonStates.analysis_type[biomeSelect];
+    // var fieldOn = !this.state.buttonStates.analysis_type[fieldSelect];
 
-    line1.style.display = "none";
-    line2.style.display = "none";
+    // line1.style.display = "none";
+    // line2.style.display = "none";
 
-    if (generalOn) {
-      if (biomeOn || fieldOn) line1.style.display = "block";
-      if (biomeOn && fieldOn) line2.style.display = "block";
-    } else {
-      if (biomeOn && fieldOn) line2.style.display = "block";
-    }
+    // if (generalOn) {
+    //   if (biomeOn || fieldOn) line1.style.display = "block";
+    //   if (biomeOn && fieldOn) line2.style.display = "block";
+    // } else {
+    //   if (biomeOn && fieldOn) line2.style.display = "block";
+    // }
   }
 
   /**
@@ -249,7 +250,6 @@ class App extends Component {
     if (!isAnalysisButton) path = "graph_type";
 
     var tempButtonStates = this.state.buttonStates;
-    var buttonOff = tempButtonStates[path][buttonID];
 
     if (this.state.buttonStates[allSelect]) {
 
@@ -257,7 +257,7 @@ class App extends Component {
       for (var buttonInd in tempButtonStates["analysis_type"]) {
         tempButtonStates["analysis_type"][buttonInd] = true;
       }
-      for (var buttonInd in tempButtonStates["graph_type"]) {
+      for (buttonInd in tempButtonStates["graph_type"]) {
         tempButtonStates["graph_type"][buttonInd] = true;
       }
 
@@ -273,8 +273,6 @@ class App extends Component {
       this.setState({buttonStates: tempButtonStates});
       return;
     }
-    
-    // if (!buttonOff) return;
 
     // Make sure that the line graph is not selected for an analysis without one.
     if (isAnalysisButton && buttonID !== fieldSelect && !this.state.buttonStates['graph_type'][lineSelect]) {
@@ -282,7 +280,7 @@ class App extends Component {
       tempButtonStates['graph_type'][barSelect] = false;
     }
 
-    for (var buttonInd in tempButtonStates[path]) {
+    for (buttonInd in tempButtonStates[path]) {
       tempButtonStates[path][buttonInd] = true;
     }
 
@@ -299,7 +297,7 @@ class App extends Component {
     for (var buttonInd in tempButtonStates["analysis_type"]) {
       tempButtonStates["analysis_type"][buttonInd] = false;
     }
-    for (var buttonInd in tempButtonStates["graph_type"]) {
+    for (buttonInd in tempButtonStates["graph_type"]) {
       tempButtonStates["graph_type"][buttonInd] = false;
     }
 
@@ -427,46 +425,137 @@ class App extends Component {
     console.log("Selected sessions: " + values.map(a => a.label).join(", "));
   }
 
+  
+  /**
+   * Generates a list of 20 most recent sessions for the dropdown menu
+   */
+  generateRecentSessions() {
+    var url = "https://rpaowv6m75.execute-api.us-east-2.amazonaws.com/beta/getrecentsessions/20";
+    
+    fetch(url).then(response => response.json()).then(data => {
+
+      var sessions = []
+      data.forEach(obj => {
+        var duration = getDuration(obj.loginTime, obj.logoutTime);
+        sessions.push({
+          value: obj.userId + "+" + obj.sessionId,
+          label: obj.username + " " + getDate(obj.loginTime, true) + " (" + duration + " mins)",
+          user: {
+            value: obj.userId,
+            label: obj.username,
+          },
+          session: {
+            value: obj.sessionId,
+            label: getDate(obj.loginTime, true) + " (" + duration + " mins)",
+            startTime: obj.loginTime,
+            endTime: obj.logoutTime,
+          },
+        })
+      });
+
+      var select_options = this.state.SELECT;
+      select_options.recentSessions_data = sessions;
+      this.setState({ SELECT: select_options });
+
+    }).then(() => {
+      var select_options = this.state.SELECT;
+      select_options.recentSessions_loading = false;
+      select_options.recentSessions_disabled = false;
+      this.setState({ SELECT: select_options })
+    });
+  }
+
+  /**
+   * Handles selecting a recent session
+   * @param {*} value Value of the selected item
+   */
+  handleChangeRecentSession(value) {
+
+    if (this.state.SELECT.recentSessions_selected === value) return;
+
+    var select_options = this.state.SELECT;
+    if (value === null) value = '';
+
+    select_options.recentSessions_selected = value;
+
+    this.setState({ SELECT: select_options });
+
+    console.log("Selected recent session: " + value.label);
+    console.log("  " + value.value)
+  }
+
+  /**
+   * Handles selecting which session to show the timed analysis of
+   * @param {*} value Value of the selected item
+   */
+  handleSelectTimedSession(value) {
+    var sessionID = value.value;
+    this.setState({
+      analysis_STEM_selected_session: this.state.analysis_STEM_times[sessionID],
+      analysis_STEM_selected_info: {
+        value: sessionID,
+        label: value.label,
+      }
+    });
+  }
+
   /**
    * Retrieves analysis as a JSON file and displays it
    */
   generateButtonClick() {
 
-    if (this.state.SELECT.users_selected === '' || this.state.SELECT.sessions_selected.length === 0) {
+    if ((this.state.SELECT.users_selected === '' || this.state.SELECT.sessions_selected.length === 0) && this.state.SELECT.recentSessions_selected === '') {
       alert("Please select a user id and session(s)!")
       return;
     }
 
-    // var url = "https://rpaowv6m75.execute-api.us-east-2.amazonaws.com/beta/getanalysis/";
-    var url = "https://rpaowv6m75.execute-api.us-east-2.amazonaws.com/beta/getanalysisbysession/";
-    url += this.state.SELECT.users_selected.value + "+" + this.state.SELECT.sessions_selected.map(a => a.value).join("+");
-    // console.log(url);
-    // url = "https://rpaowv6m75.execute-api.us-east-2.amazonaws.com/beta/getanalysis/275+1530374999+1530377076";
+    var url = "https://rpaowv6m75.execute-api.us-east-2.amazonaws.com/beta/newgetanalysisbysession/";
+    if (this.state.SELECT.recentSessions_selected !== '') {
+      url += this.state.SELECT.recentSessions_selected.value;
+    } else {
+      url += this.state.SELECT.users_selected.value + "+" + this.state.SELECT.sessions_selected.map(a => a.value).join("+");
+    }
 
     this.disableGenerateButton();
     this.loadingAnimation();
-      fetch(url).then(response => response.json()).then(data => {
-        this.setState({
-          username: data["username"],
-          start_time: data["startTime"],
-          end_time: data["endTime"],
-          loaded: true,
-          analysis_JSON: [JSON.stringify(data)],
-          analysis_general: [
-            data["blocksTraveled"]/10,
-            data["blocksPlaced"],
-            data["blocksBroken"],
-            data["chatMessages"],
-            data["commands"]
-          ],
-          analysis_STEM_keys: Object.keys(data["stemAreas"]),
-          analysis_STEM_values: Object.values(data["stemAreas"]),
-          analysis_STEM_times: data["areaTimes"],
-          analysis_biome_keys: Object.keys(data["biomeTimes"]),
-          analysis_biome_values: Object.values(data["biomeTimes"]),
-        });
+    fetch(url).then(response => response.json()).then(data => {
+      if (this.state.SELECT.recentSessions_selected !== '') {
+        
+        var recentSession = this.state.SELECT.recentSessions_selected;
+        var select_options = this.state.SELECT;
+
+        select_options.users_selected = recentSession.user;
+        select_options.sessions_selected = [recentSession.session];
+        this.setState({ SELECT: select_options });
+  
       }
-    ).then(() => {
+      this.setState({
+        username: data["username"],
+        start_time: data["startTime"],
+        end_time: data["endTime"],
+        loaded: true,
+        analysis_general: [
+          // data["blocksTraveled"]/10,
+          (data["distanceTraveled"]/10).toFixed(2),
+          data["blocksPlaced"],
+          data["blocksBroken"],
+          data["chatMessages"],
+          data["commands"]
+        ],
+        // analysis_STEM_keys: Object.keys(data["stemAreas"]),
+        // analysis_STEM_values: Object.values(data["stemAreas"]),
+        analysis_STEM_keys: Object.keys(data["stemAreaPoints"]),
+        analysis_STEM_values: Object.values(data["stemAreaPoints"]),
+
+        // analysis_STEM_times: data["areaTimes"],
+        analysis_STEM_times: data["sessionStemAreaTimes"],
+        analysis_STEM_selected_info: this.state.SELECT.sessions_selected[0],
+        analysis_STEM_selected_session: data["sessionStemAreaTimes"][this.state.SELECT.sessions_selected[0].value],
+
+        analysis_biome_keys: Object.keys(data["biomeTimes"]),
+        analysis_biome_values: Object.values(data["biomeTimes"]),
+      });
+    }).then(() => {
       this.hideOptionsMenu();
       this.normalAnimation();
       this.showAnalysis();
@@ -478,7 +567,6 @@ class App extends Component {
 //   start_time: TEST_JSON["startTime"],
 //   end_time: TEST_JSON["endTime"],
 //   loaded: true,
-//   analysis_JSON: [JSON.stringify(TEST_JSON)],
 //   analysis_general: [
 //     TEST_JSON["blocksTraveled"]/10,
 //     TEST_JSON["blocksPlaced"],
@@ -510,6 +598,9 @@ class App extends Component {
     var generateOptionsClass = classNames({
       "disabledDiv": this.state.options_state,
     })
+    var separatorClass = classNames({
+      "disabledDiv": !this.state.buttonStates[allSelect],
+    });
 
     var generalBtnClass = classNames({
       "myButton": true,
@@ -600,6 +691,21 @@ class App extends Component {
               isLoading={ this.state.SELECT.sessions_loading }
               disabled={ this.state.SELECT.sessions_disabled }
             />
+
+            <hr/>
+
+            {/* Dropdown for selecting from recent sessions */}
+            <Select className="custom-select"
+              placeholder="Select from the 20 most recent sessions"
+              options={ this.state.SELECT.recentSessions_data }
+              value={ this.state.SELECT.recentSessions_selected }
+              removeSelected={false}
+              closeOnSelect={true}
+              onChange={ this.handleChangeRecentSession }
+              isLoading={ this.state.SELECT.recentSessions_loading }
+              disabled={ this.state.SELECT.recentSessions_disabled }
+            />
+
           </div>
 
           {/* Button to generate analysis */}
@@ -624,7 +730,7 @@ class App extends Component {
             <p><b>Start Time:</b> {getDate(this.state.start_time)}</p>
             <p><b>End Time:</b> {this.state.end_time < 0 ? "Now" : getDate(this.state.end_time)}</p>
             <p><b>Total Duration:</b> {getDurationOfSessions(this.state.SELECT.sessions_selected, true)} minutes</p>
-            <p><b>Distance Traveled:</b> {this.state.analysis_general[0]*10}</p>
+            <p><b>Distance Traveled:</b> {(this.state.analysis_general[0]*10).toFixed(2)}</p>
             <p><b>Blocks Placed:</b> {this.state.analysis_general[1]}</p>
             <p><b>Blocks Broken:</b> {this.state.analysis_general[2]}</p>
             <p><b>Messages Sent:</b> {this.state.analysis_general[3]}</p>
@@ -684,7 +790,7 @@ class App extends Component {
           </div>
 
           {/* By default, this separator is disabled */}
-          <hr id="line1" style={{display: "none"}}/>
+          <hr className={separatorClass}/>
 
           {/* Statistics of biome times */}
           <div className={biomesClass}>
@@ -697,7 +803,7 @@ class App extends Component {
           </div>
 
           {/* By default, this separator is disabled */}
-          <hr id="line2" style={{display: "none"}}/>
+          <hr className={separatorClass}/>
 
           {/* Analysis of STEM fields */}
           <div className={fieldsClass}>
@@ -706,8 +812,35 @@ class App extends Component {
               <Chart type='Bar' className={barClass} labels={this.state.analysis_STEM_keys} data={this.state.analysis_STEM_values} yAxisLabel='Points'/>
               <Chart type='Pie' className={pieClass} labels={this.state.analysis_STEM_keys} data={this.state.analysis_STEM_values} />
               <Chart type='Doughnut' className={donutClass} labels={this.state.analysis_STEM_keys} data={this.state.analysis_STEM_values} />
+              
               <h4 className={lineClass}>Click on a point to see what blocks were placed/broken</h4>
-              <TimeChart className={lineClass} data={this.state.analysis_STEM_times} />
+              <h4 className={lineClass}>Select which session to see the graph of</h4>
+
+{/* <Select className="custom-select"
+              multi={true}
+              placeholder="Select one or more sessions"
+              options={ this.state.SELECT.sessions_data }
+              value={ this.state.SELECT.sessions_selected }
+              removeSelected={true}
+              closeOnSelect={false}
+              onChange={ this.handleChangeSession }
+              isLoading={ this.state.SELECT.sessions_loading }
+              disabled={ this.state.SELECT.sessions_disabled }
+            /> */}
+
+              <Select
+                className={classNames({
+                  "custom-select": true,
+                  "disabledDiv": this.state.buttonStates.graph_type[lineSelect]
+                })}
+                placeholder={"Analyzed Sessions (" + this.state.SELECT.sessions_selected.length + ")"}
+                options={ this.state.SELECT.sessions_selected }
+                value={ this.state.analysis_STEM_selected_info }
+                closeOnSelect={true}
+                clearable={false}
+                onChange={ this.handleSelectTimedSession }
+              />
+              <TimeChart className={lineClass} data={this.state.analysis_STEM_selected_session} />
             </div>
           </div>
 
